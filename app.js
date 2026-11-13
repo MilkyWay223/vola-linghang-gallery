@@ -1,1 +1,1 @@
-import './viewer-v2.js';
+import './viewer-v2.js?v=fast9';
