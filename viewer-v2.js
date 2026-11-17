@@ -7,11 +7,11 @@ import { OutputPass } from './assets/vendor/postprocessing/OutputPass.js';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,mobile=matchMedia('(max-width:760px)').matches;
 const stage=$('#viewport'),canvas=$('#modelCanvas'),identity=new THREE.Quaternion(),clock=new THREE.Clock();
-let renderer,scene,camera,controls,composer,bloom,floor,grid,root,shadowLight,explosionFill,guideGroup,ready=false,loading=false,inView=true,night=false;
-let explodeScope='assembly';
+let renderer,scene,camera,controls,composer,bloom,floor,grid,root,shadowLight,studioHemi,rimLight,explosionFill,cabinFill,guideGroup,ready=false,loading=false,interiorReady=false,rotorReady=false,pendingMode=null,pendingView=null,inView=true,night=true;
+let explodeScope='assembly',interiorMeta=null,interiorPromise=null,interiorFailure=null;
 let mode='orbit',explode=0,explodeTarget=0,door=0,doorTarget=0,speed=0,speedTarget=0,rotorAngle=0,cameraTween,loadedBytes=0;
 let actors=[],rotors=[],hotspots=[],bodyMats=[],glassMats=[],lightMats=[],materialMap=new Map(),pointers=[],sceneLightCards=[];
-let frameMs=16,frames=0,statsTime=0,currentView='perspective',tourTimer=null;
+let frameMs=16,frames=0,statsTime=0,slowFrames=0,currentView='perspective',tourTimer=null;
 const viewPositions={perspective:[-11.2,6.8,12.2],side:[0,3.8,17],top:[0,20,.015],front:[-18,3.6,0],cabin:[-3.5,3.4,4.3],rotor:[-6,4.5,6.2],frontconsole:[-1.7,4.5,1.7],rearconsole:[.25,4.5,1.7]};
 const vertex=new THREE.Vector3(),normal=new THREE.Vector3(),raycaster=new THREE.Raycaster();
 
@@ -36,22 +36,23 @@ function reflectionStudio(){
  const pmrem=new THREE.PMREMGenerator(renderer);const texture=pmrem.fromScene(env,.08).texture;pmrem.dispose();env.traverse(o=>{o.geometry?.dispose();o.material?.dispose()});return texture;
 }
 function initScene(){
- renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,mobile?1.4:2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.72;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
- scene=new THREE.Scene();scene.background=new THREE.Color(0xe9edf1);scene.fog=new THREE.Fog(0xe9edf1,24,70);scene.environment=reflectionStudio();
- camera=new THREE.PerspectiveCamera(35,1,.06,120);camera.position.set(...viewPositions.perspective);controls=new OrbitControls(camera,canvas);controls.target.set(-.1,1.65,0);controls.enableDamping=true;controls.dampingFactor=.075;controls.minDistance=3;controls.maxDistance=38;controls.maxPolarAngle=Math.PI*.485;controls.autoRotateSpeed=.48;controls.addEventListener('start',()=>{cameraTween=null;stopTour()});
- scene.add(new THREE.HemisphereLight(0xffffff,0x8d98a6,.52));shadowLight=new THREE.DirectionalLight(0xfffcf5,1.3);shadowLight.position.set(-5,11,8);shadowLight.castShadow=true;shadowLight.shadow.mapSize.set(mobile?1024:2048,mobile?1024:2048);Object.assign(shadowLight.shadow.camera,{left:-10,right:10,top:10,bottom:-10,near:1,far:35});shadowLight.shadow.bias=-.00015;shadowLight.shadow.normalBias=.012;shadowLight.shadow.radius=5;scene.add(shadowLight);
- const rim=new THREE.DirectionalLight(0xbad8ff,.72);rim.position.set(6,6,-8);scene.add(rim);
+ renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:location.search.includes("capture="),alpha:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,mobile?1.4:2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.70;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+ renderer.localClippingEnabled=true;scene=new THREE.Scene();scene.background=new THREE.Color(0x171d26);scene.fog=new THREE.Fog(0x171d26,24,70);scene.environment=reflectionStudio();
+ camera=new THREE.PerspectiveCamera(35,1,.06,120);camera.position.set(...viewPositions.perspective);controls=new OrbitControls(camera,canvas);controls.target.set(-.1,1.25,0);controls.enableDamping=true;controls.dampingFactor=.075;controls.minDistance=3;controls.maxDistance=38;controls.maxPolarAngle=Math.PI*.485;controls.autoRotateSpeed=.8;controls.addEventListener('start',()=>{cameraTween=null;stopTour()});
+ studioHemi=new THREE.HemisphereLight(0xffffff,0x8d98a6,.45);scene.add(studioHemi);shadowLight=new THREE.DirectionalLight(0xfffcf5,1.15);shadowLight.position.set(-5,11,8);shadowLight.castShadow=true;shadowLight.shadow.mapSize.set(mobile?1024:2048,mobile?1024:2048);Object.assign(shadowLight.shadow.camera,{left:-10,right:10,top:10,bottom:-10,near:1,far:35});shadowLight.shadow.bias=-.00015;shadowLight.shadow.normalBias=.012;shadowLight.shadow.radius=5;scene.add(shadowLight);
+ rimLight=new THREE.DirectionalLight(0xbad8ff,.78);rimLight.position.set(6,6,-8);scene.add(rimLight);
  explosionFill=new THREE.HemisphereLight(0xffffff,0xb7c7d7,0);scene.add(explosionFill);
- floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0xe1e6ec,roughness:.55,metalness:.12}));floor.rotation.x=-Math.PI/2;floor.position.y=-.025;floor.receiveShadow=true;scene.add(floor);
- const platform=new THREE.Mesh(new THREE.CylinderGeometry(6.5,6.5,.035,160),new THREE.MeshStandardMaterial({color:0xf3f5f6,roughness:.4,metalness:.18}));platform.position.y=-.02;platform.receiveShadow=true;scene.add(platform);sceneLightCards.push(platform);
- const ring=new THREE.Mesh(new THREE.RingGeometry(6.47,6.49,160),new THREE.MeshBasicMaterial({color:0xb8c6d5,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.001;scene.add(ring);sceneLightCards.push(ring);
+ cabinFill=new THREE.PointLight(0xe8f2ff,0,10,2);cabinFill.position.set(-.6,4.2,1.7);scene.add(cabinFill);
+ floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0x222a36,roughness:.62,metalness:.1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.025;floor.receiveShadow=true;scene.add(floor);
+ const platform=new THREE.Mesh(new THREE.CylinderGeometry(6.5,6.5,.035,160),new THREE.MeshStandardMaterial({color:0x2d3643,roughness:.48,metalness:.15}));platform.position.y=-.02;platform.receiveShadow=true;scene.add(platform);sceneLightCards.push(platform);
+ const ring=new THREE.Mesh(new THREE.RingGeometry(6.47,6.49,160),new THREE.MeshBasicMaterial({color:0x74889a,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.001;scene.add(ring);sceneLightCards.push(ring);
  grid=new THREE.GridHelper(40,40,0xc3cdd9,0xcfd8e2);grid.position.y=-.004;grid.material.transparent=true;grid.material.opacity=.07;grid.visible=false;scene.add(grid);
  const target=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType});target.samples=mobile?2:4;composer=new EffectComposer(renderer,target);composer.addPass(new RenderPass(scene,camera));bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.16,.4,1.35);composer.addPass(bloom);composer.addPass(new OutputPass());
  root=new THREE.Group();root.position.y=1.91;scene.add(root);new ResizeObserver(resize).observe(stage);resize();renderer.setAnimationLoop(render);
  canvas.addEventListener('pointerdown',e=>{pointers=[e.clientX,e.clientY]});canvas.addEventListener('pointerup',selectPart);
 }
 async function readBatch(file){
- const response=await fetch('./assets/'+file.url);if(!response.ok)throw Error('模型数据读取失败');
+ const response=await fetch('./assets/'+file.url,{signal:AbortSignal.timeout(45000)});if(!response.ok)throw Error('模型数据读取失败');
  const chunks=[];let size=0,reader=response.body.getReader();while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);size+=value.length;loadedBytes+=value.length;$('#loadStatus').textContent=`精细曲面载入中 · ${(loadedBytes/1048576).toFixed(1)} MB`;}
  const bytes=new Uint8Array(size);let n=0;for(const c of chunks){bytes.set(c,n);n+=c.length}
  if(!('DecompressionStream'in window))throw Error('请使用新版 Chrome、Edge 或 Safari 浏览器');
@@ -65,19 +66,28 @@ function positions(d,buffer){
 }
 function explosionFor(d,box){
  const p=d.part,c=box.getCenter(new THREE.Vector3());
- if(p==='canopy')return new THREE.Vector3(-.12,2.2,0);
- if(p.startsWith('door_'))return new THREE.Vector3(0,.42,p.endsWith('_l')?.48:-.48);
- if(p.startsWith('seat_'))return new THREE.Vector3(p.includes('front')?-.16:.16,1.15,p.endsWith('_l')?-.14:.14);
- if(p.startsWith('battery_'))return new THREE.Vector3((c.x+.6)*.32,-1.02,c.z<0?-.13:.13);
- if(p==='belly_cover')return new THREE.Vector3(0,-1.48,0);
- if(p.startsWith('skid_'))return new THREE.Vector3(0,-1.82,p.endsWith('_l')?.36:-.36);
+ if(p==='canopy')return new THREE.Vector3(-.12,2.55,0);
+ if(p.startsWith('door_'))return new THREE.Vector3(0,.62,p.endsWith('_l')?.62:-.62);
+ if(p.startsWith('seat_'))return new THREE.Vector3(p.includes('front')?-.28:.28,1.45,p.endsWith('_l')?-.3:.3);
+ if(p.startsWith('battery_'))return new THREE.Vector3((c.x+.6)*.4,-1.32,c.z<0?-.2:.2);
+ if(p==='belly_cover')return new THREE.Vector3(0,-1.62,0);
+ if(p.startsWith('skid_'))return new THREE.Vector3(0,-2.05,p.endsWith('_l')?.42:-.42);
  if(p.startsWith('rotor_')){
-  if(p.endsWith('_upper'))return new THREE.Vector3(0,1.25,0);
-  if(p.endsWith('_lower'))return new THREE.Vector3(0,-.28,0);
-  if(p.endsWith('_hub'))return new THREE.Vector3(0,.68,0);
-  if(p.endsWith('_light'))return new THREE.Vector3(0,.18,0);
+  const front=p.includes('front'),radial=new THREE.Vector3(c.x<0?(front?-.82:-.48):(front?.82:.48),0,c.z<0?(front?-.82:-.55):(front?.82:.55));
+  if(p.endsWith('_upper'))return radial.add(new THREE.Vector3(0,1.32,0));
+  if(p.endsWith('_lower'))return radial.add(new THREE.Vector3(0,-.3,0));
+  if(p.endsWith('_hub'))return radial.add(new THREE.Vector3(0,.75,0));
+  if(p.endsWith('_light')||p.endsWith('_fixed'))return radial.add(new THREE.Vector3(0,.12,0));
  }
  return new THREE.Vector3();
+}
+function separationFor(part,t){
+ if(part==='canopy')return THREE.MathUtils.smoothstep(t,.04,.36);
+ if(part.startsWith('door_'))return THREE.MathUtils.smoothstep(t,.10,.52);
+ if(part.startsWith('rotor_'))return THREE.MathUtils.smoothstep(t,.24,.76);
+ if(part.startsWith('seat_'))return THREE.MathUtils.smoothstep(t,.4,.88);
+ if(part.startsWith('battery_')||part==='belly_cover'||part.startsWith('skid_'))return THREE.MathUtils.smoothstep(t,.55,1);
+ return 0;
 }
 function scopeOffset(u){
  return u.offset;
@@ -85,8 +95,8 @@ function scopeOffset(u){
 function updateScopeVisibility(){
  const scoped=mode==='explode';
  for(const a of actors){const u=a.userData;
-  a.visible=!scoped||explodeScope==='assembly'||(explodeScope==='rotor'?u.part.startsWith('rotor_front_l'):
-   u.part.startsWith('seat_')||u.originalKind==='panel'||u.originalKind==='letter'||[21,22,23,24,27,28].includes(u.layer)&&u.part==='center');
+  a.visible=!scoped||explodeScope==='assembly'||(explodeScope==='rotor'&&u.part.startsWith('rotor_front_l'));
+  u.mesh.material.clippingPlanes=null;u.mesh.material.depthTest=true;u.mesh.material.depthWrite=true;
  }
  for(const r of rotors)r.anchor.visible=!scoped||explodeScope==='assembly'||(explodeScope==='rotor'&&r.part==='rotor_front_l');
  if(floor)floor.visible=true;
@@ -100,11 +110,12 @@ function addGuides(){
  guide(-.2,0,.35,3.15,'assembly');
  for(const z of [-.35,.35])guide(-.62,z,-2.55,-.75,'assembly');
  for(const z of [-1.35,1.35])guide(0,z,-3.4,-1.05,'assembly');
- for(const x of [-1.18,.93])for(const z of [-.59,.59])guide(x,z,-.65,1.7,'cabin');
 }
 function setExplodeScope(scope){
  explodeScope=scope;$$('[data-explode-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.explodeScope===scope)));
- updateScopeVisibility();setExplode(100);chooseView(scope==='rotor'?'rotor':scope==='cabin'?'cabin':'perspective');
+ $('#explodeControls').hidden=false;
+ controls.minDistance=3;
+ setDoor(0);updateScopeVisibility();setExplode(100);chooseView(scope==='rotor'?'rotor':'perspective');
 }
 function addGeometry(d,buffer){
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(positions(d,buffer),3));geo.setAttribute('normal',new THREE.BufferAttribute(new Int16Array(buffer,d.normal.offset,d.normal.length),3,true));const index=d.index.type==='uint16'?new Uint16Array(buffer,d.index.offset,d.index.length):new Uint32Array(buffer,d.index.offset,d.index.length);if(d.key==='8_center'){const p=geo.getAttribute('position'),kept=[];for(let i=0;i<index.length;i+=3){let cover=true;const y0=p.getY(index[i]);if(!(Math.abs(y0+.767)<.000025||Math.abs(y0+.771)<.000025))cover=false;for(let k=0;k<3&&cover;k++){const j=index[i+k],x=p.getX(j),y=p.getY(j),z=p.getZ(j);if(Math.abs(y-y0)>.000025||x<-.6401||x>.0701||z< -1.0601||z>1.0801)cover=false;}if(!cover)kept.push(index[i],index[i+1],index[i+2]);}geo.setIndex(new THREE.BufferAttribute(new (index instanceof Uint16Array?Uint16Array:Uint32Array)(kept),1));}else geo.setIndex(new THREE.BufferAttribute(index,1));if([3,8].includes(d.layer)&&d.part.startsWith('rotor')){const rotor=rotors.find(r=>r.part===d.part);if(rotor){const source=geo.getAttribute('position'),p=new Float32Array(source.array);for(let i=0;i<p.length;i+=3){p[i]=rotor.center.x+(p[i]-rotor.center.x)*1.003;p[i+2]=rotor.center.z+(p[i+2]-rotor.center.z)*1.003;}geo.setAttribute('position',new THREE.BufferAttribute(p,3));}}geo.computeBoundingBox();geo.computeBoundingSphere();
@@ -119,25 +130,109 @@ function addRotor(d){
  const anchor=new THREE.Group();anchor.position.fromArray(d.center);root.add(anchor);const moving=new THREE.Group();anchor.add(moving);const radius=d.radius;
  const bladeMat=new THREE.MeshPhysicalMaterial({color:0x181d23,metalness:.35,roughness:.3,clearcoat:.55,envMapIntensity:.7,side:THREE.DoubleSide});
  const disc=new THREE.Mesh(new THREE.RingGeometry(radius*.22,radius*.97,96),new THREE.MeshBasicMaterial({color:0x73808b,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));disc.rotation.x=-Math.PI/2;disc.position.y=.03;anchor.add(disc);
- const center=anchor.position.clone(),sign=(d.part.endsWith('_l')?1:-1)*(d.part.includes('front')?1:-1);rotors.push({part:d.part,anchor,moving,center,sign,disc,bladeMat,fixedMat:bladeMat.clone(),offset:new THREE.Vector3(center.x<0?-.65:.65,0,center.z<0?-.75:.75)});
+ const previewFixed=new THREE.Group(),previewMoving=new THREE.Group();anchor.add(previewFixed);moving.add(previewMoving);
+ const innerRing=new THREE.Mesh(new THREE.RingGeometry(radius*.77,radius*.83,48),bladeMat);innerRing.rotation.x=-Math.PI/2;previewFixed.add(innerRing);
+ const hub=new THREE.Mesh(new THREE.CylinderGeometry(radius*.12,radius*.12,.065,20),bladeMat);previewMoving.add(hub);
+ const profile=new THREE.Shape();profile.moveTo(radius*.13,-radius*.07);profile.quadraticCurveTo(radius*.38,-radius*.13,radius*.77,-radius*.045);profile.quadraticCurveTo(radius*.84,0,radius*.77,radius*.055);profile.quadraticCurveTo(radius*.38,radius*.11,radius*.13,radius*.07);profile.closePath();
+ const previewBlade=new THREE.ShapeGeometry(profile,12);
+ for(let i=0;i<8;i++){const blade=new THREE.Mesh(previewBlade,bladeMat);blade.rotation.x=-Math.PI/2;blade.position.y=.035;const pivot=new THREE.Group();pivot.rotation.y=i*Math.PI/4;pivot.add(blade);previewMoving.add(pivot)}
+ const center=anchor.position.clone(),sign=(d.part.endsWith('_l')?1:-1)*(d.part.includes('front')?1:-1),front=d.part.includes('front');rotors.push({part:d.part,anchor,moving,center,sign,disc,bladeMat,fixedMat:bladeMat.clone(),previewFixed,previewMoving,offset:new THREE.Vector3(center.x<0?(front?-.82:-.48):(front?.82:.48),0,center.z<0?(front?-.82:-.55):(front?.82:.55))});
 }
 function addOriginalRotor(d,buffer){
  const rotor=rotors.find(x=>x.part===d.part);if(!rotor)throw Error('旋翼部件未匹配');
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(positions(d,buffer),3));geo.setAttribute('normal',new THREE.BufferAttribute(new Int16Array(buffer,d.normal.offset,d.normal.length),3,true));const indexes=d.index.type==='uint16'?new Uint16Array(buffer,d.index.offset,d.index.length):new Uint32Array(buffer,d.index.offset,d.index.length);geo.setIndex(new THREE.BufferAttribute(indexes,1));geo.computeBoundingSphere();
  const mesh=new THREE.Mesh(geo,d.rotating?rotor.bladeMat:rotor.fixedMat);mesh.position.copy(rotor.center).negate();mesh.castShadow=true;mesh.receiveShadow=false;mesh.name='原始旋翼';(d.rotating?rotor.moving:rotor.anchor).add(mesh);
 }
+async function loadRotorDetail(records){
+ const buffer=await readBatch({url:'rotors-v6.bin.gz'});
+ for(const d of records)addOriginalRotor(d,buffer);
+ for(const r of rotors)for(const preview of [r.previewFixed,r.previewMoving]){const geometries=new Set();preview.traverse(o=>{if(o.geometry)geometries.add(o.geometry)});geometries.forEach(g=>g.dispose());preview.parent.remove(preview)}
+ rotorReady=true;$('#partCount').textContent='原始模型 · 分层爆炸';
+ document.dispatchEvent(new Event('vola:rotor-ready'));
+}
+function ensureInterior(){
+ if(interiorReady)return Promise.resolve();
+ if(interiorPromise)return interiorPromise;
+ interiorFailure=null;
+ interiorPromise=loadInterior(interiorMeta).catch(e=>{
+  interiorFailure=e;console.error('VOLA interior:',e);
+  if(pendingMode||pendingView){$('#loading').hidden=true;$('#modelError').hidden=false;$('#modelError p').textContent='座舱细节加载失败，请重试。整机展示仍可使用。'}
+  else $('#partCount').textContent='座舱细节暂不可用 · 可重试';
+  throw e;
+ }).finally(()=>{interiorPromise=null});
+ return interiorPromise;
+}
 function createBrushedMetal(){const canvas=document.createElement('canvas');canvas.width=512;canvas.height=512;const ctx=canvas.getContext('2d');ctx.fillStyle='#aeb3b8';ctx.fillRect(0,0,512,512);let seed=1827;for(let y=0;y<512;y++){seed=(seed*1664525+1013904223)>>>0;const v=160+(seed%64);ctx.strokeStyle=`rgba(${v},${v},${v},.38)`;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,y+.5);ctx.lineTo(512,y+.5);ctx.stroke()}const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());const m=new THREE.MeshPhysicalMaterial({color:0xe4e6e8,map:tex,metalness:.58,roughness:.52,clearcoat:.08,clearcoatRoughness:.45,side:THREE.DoubleSide,envMapIntensity:.42});m.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>','outgoingLight = min(outgoingLight, vec3(0.9));\n#include <opaque_fragment>')};return m;}
 function addCabinOriginal(records){const metal=createBrushedMetal();for(const d of records){const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(d.positions,3));if(d.normals.length===d.positions.length)geo.setAttribute('normal',new THREE.Float32BufferAttribute(d.normals,3));else geo.computeVertexNormals();geo.setIndex(d.indices);if(d.kind==='panel'){const p=geo.getAttribute('position'),uv=new Float32Array(p.count*2);for(let i=0;i<p.count;i++){uv[2*i]=(p.getZ(i)+1.08)/2.14;uv[2*i+1]=(p.getX(i)+.64)/.71}geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));}geo.computeBoundingSphere();const mesh=new THREE.Mesh(geo,d.kind==='panel'?metal:material(d.kind==='body'?11:4));if(d.kind==='panel')mesh.position.y=.005;mesh.name=d.kind==='panel'?'座舱拉丝金属地板饰板':d.kind==='body'?'机身细节':'座舱发光字母';mesh.receiveShadow=d.kind==='panel';const actor=new THREE.Group();actor.add(mesh);root.add(actor);actor.userData={layer:d.kind==='panel'?10:d.kind==='body'?11:4,part:'center',pivot:new THREE.Vector3(),endQuaternion:identity.clone(),residual:new THREE.Vector3(),motion:false,originalKind:d.kind,offset:new THREE.Vector3(),mesh};actors.push(actor);mesh.userData.actor=actor;}}
 function addHotspots(){const defs=[['全景座舱','PANORAMIC CANOPY',[-2,1,0]],['动力组件','DISTRIBUTED PROPULSION',[-2.8,-.4,2.8]],['着陆底座','INTEGRATED LANDING BASE',[-.1,-1.4,1.4]],['能源模块','BATTERY SYSTEM',[-.6,-1,0]]];for(const [name,en,p]of defs){const el=document.createElement('div');el.className='model-label';el.innerHTML=`<span>${name}</span><small>${en}</small>`;$('#labels').append(el);hotspots.push({el,p:new THREE.Vector3(...p)});}}
-async function init(){if(loading||ready)return;loading=true;try{$('#loading').hidden=false;$('#modelError').hidden=true;if(!renderer)initScene();const [r,rotorResponse,cabinResponse]=await Promise.all([fetch('./assets/model-v7.json'),fetch('./assets/rotors-v6.json'),fetch('./assets/cabin-original.json')]);if(!r.ok)throw Error('模型索引读取失败');if(!rotorResponse.ok)throw Error('旋翼数据读取失败');if(!cabinResponse.ok)throw Error('座舱细节读取失败');const [meta,rotorRecords,cabinRecords]=await Promise.all([r.json(),rotorResponse.json(),cabinResponse.json()]);for(const d of meta.rotors)addRotor(d);const buffers=await Promise.all([readBatch({url:'rotors-v6.bin.gz'}),...meta.files.map(readBatch)]);for(const d of rotorRecords)addOriginalRotor(d,buffers[0]);for(const [i,file] of meta.files.entries()){const buffer=buffers[i+1];for(const d of meta.groups.filter(d=>d.batch===file.batch))addGeometry(d,buffer);}addCabinOriginal(cabinRecords);addHotspots();addGuides();updateScopeVisibility();ready=true;setEnvironment(false);$('#loading').hidden=true;$('#partCount').textContent='原始模型 · 分层爆炸';$('#rotorStatus').textContent='待机';chooseView('perspective',true);
- document.dispatchEvent(new Event('vola:ready'));
- }catch(e){console.error('VOLA viewer:',e);$('#loading').hidden=true;$('#modelError').hidden=false;$('#modelError p').textContent=e.message+'。请检查网络后重试。';}finally{loading=false}}
-function resize(){if(!renderer)return;const {width,height}=stage.getBoundingClientRect();const ratio=Math.min(devicePixelRatio,$('#quality')?.value==='light'?1:mobile?1.4:2);renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);composer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();if(ready)chooseView(currentView,true);}
-function chooseView(name,instant=false){if(!camera)return;currentView=name;const close=['cabin','rotor','frontconsole','rearconsole'].includes(name),scale=(close?1:Math.max(1,1.1/camera.aspect))*(mode==='explode'?name==='perspective'?1.18:1.22:1);const target=name==='frontconsole'?new THREE.Vector3(-1.7,1.45,0):name==='rearconsole'?new THREE.Vector3(.25,1.45,0):name==='cabin'?new THREE.Vector3(-.5,mode==='explode'?2.8:2.1,0):name==='rotor'?new THREE.Vector3(-2.8,mode==='explode'?2.45:1.5,2.75):new THREE.Vector3(-.1,mode==='explode'?3.35:1.65,0);let to=new THREE.Vector3(...viewPositions[name]).multiplyScalar(scale);if(mode==='explode'&&name==='perspective')to.y+=1.25;if(mode==='explode'&&name==='cabin')to=target.clone().add(to.sub(target).multiplyScalar(1.7));cameraTween={from:camera.position.clone(),to,targetFrom:controls.target.clone(),targetTo:target,start:performance.now(),duration:instant||reduced?1:1150};$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));}
-function setMode(next){const prev=mode;mode=next;updateGlass();controls.maxPolarAngle=next==='explode'?Math.PI*.72:Math.PI*.485;$$('[data-mode]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===next)));$$('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==next);if(next!=='explode')setExplode(0);if(next!=='animate'){setDoor(0);$('#rotorToggle').checked=false;speedTarget=0;}if(next==='explode'||prev==='explode'){if(next==='explode')explodeScope='assembly';updateScopeVisibility();$$('[data-explode-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.explodeScope===explodeScope)));chooseView('perspective');}$('#selectedPart').hidden=true;}
-function setExplode(value){explodeTarget=value/100;$('#explodeRange').value=value;$('#explodeValue').textContent=Math.round(value)+'%';$('#explodePlay').innerHTML=value>50?'回到完整装配 <span>↙</span>':'展开结构 <span>↗</span>';}
+async function init(){
+ if(loading||ready)return;loading=true;
+ try{
+  $('#loading').hidden=false;$('#modelError').hidden=true;if(!renderer)initScene();
+  const [modelResponse,rotorResponse]=await Promise.all([fetch('./assets/model-v7.json'),fetch('./assets/rotors-v6.json')]);
+  if(!modelResponse.ok||!rotorResponse.ok)throw Error('模型索引读取失败');
+  const [meta,rotorRecords]=await Promise.all([modelResponse.json(),rotorResponse.json()]);
+  for(const d of meta.rotors)addRotor(d);
+  const exterior=meta.files.find(f=>f.batch==='exterior');
+  const exteriorBuffer=await readBatch(exterior);
+  for(const d of meta.groups.filter(d=>d.batch==='exterior'))addGeometry(d,exteriorBuffer);
+  addHotspots();addGuides();updateScopeVisibility();ready=true;interiorMeta=meta;setEnvironment(true);
+  $('#loading').hidden=true;$('#partCount').textContent='整机可操作 · 旋翼细节载入中';$('#rotorStatus').textContent='待机';chooseView('perspective',true);
+  document.dispatchEvent(new Event('vola:ready'));
+  loadRotorDetail(rotorRecords).catch(e=>{console.error('VOLA rotors:',e);$('#partCount').textContent='旋翼细节加载失败 · 请刷新重试'}).finally(()=>{if(!interiorPromise&&!interiorReady)ensureInterior().catch(()=>{})});
+ }catch(e){console.error('VOLA viewer:',e);$('#loading').hidden=true;$('#modelError').hidden=false;$('#modelError p').textContent=e.message+'。请检查网络后重试。';}
+ finally{loading=false}
+}
+async function loadInterior(meta){
+ const interior=meta.files.find(f=>f.batch==='interior');
+ const [buffer,response]=await Promise.all([readBatch(interior),fetch('./assets/cabin-original.json',{signal:AbortSignal.timeout(45000)})]);
+ if(!response.ok)throw Error('座舱细节读取失败');
+ const records=await response.json();
+ for(const d of meta.groups.filter(d=>d.batch==='interior'))addGeometry(d,buffer);
+ addCabinOriginal(records);interiorReady=true;interiorFailure=null;updateScopeVisibility();$('#partCount').textContent='原始模型 · 分层爆炸';
+ $('#loading').hidden=true;
+ if(pendingMode){const next=pendingMode;pendingMode=null;setMode(next)}
+ if(pendingView){const next=pendingView;pendingView=null;chooseView(next)}
+ document.dispatchEvent(new Event('vola:interior-ready'));
+}
+function resize(){if(!renderer)return;const {width,height}=stage.getBoundingClientRect(),aspect=width/height,changed=Math.abs(camera.aspect-aspect)>.05;const ratio=Math.min(devicePixelRatio,$('#quality')?.value==='light'?1:mobile?1.4:2);renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);composer.setSize(width,height);camera.aspect=aspect;camera.updateProjectionMatrix();if(ready&&changed)chooseView(currentView,true)}
+function chooseView(name,instant=false){
+ if(!camera)return;currentView=name;
+ const amount=mode==='explode'?explodeTarget:0,close=['cabin','rotor','frontconsole','rearconsole'].includes(name);
+ const scale=(close?1:Math.max(1,1.1/camera.aspect))*(name==='perspective'?.92:1)*(1+(name==='perspective'?.38:.22)*amount);
+ const target=name==='frontconsole'?new THREE.Vector3(-1.7,1.45,0):name==='rearconsole'?new THREE.Vector3(.25,1.45,0):name==='cabin'?new THREE.Vector3(-.5,2.1+.7*amount,0):name==='rotor'?new THREE.Vector3(-2.8,1.5+.95*amount,2.75):new THREE.Vector3(-.1,1.25+1.55*amount,0);
+ let to=new THREE.Vector3(...viewPositions[name]).multiplyScalar(scale);if(name==='perspective')to.y+=.95*amount;if(name==='cabin')to=target.clone().add(to.sub(target).multiplyScalar(1+.7*amount));
+ cameraTween={from:camera.position.clone(),to,targetFrom:controls.target.clone(),targetTo:target,start:performance.now(),duration:instant||reduced?1:1150};
+ $$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
+}
+function setMode(next){
+ if(!ready)return;
+ if(next!=='explode')controls.minDistance=3;
+ if(next==='explode'&&!interiorReady){pendingMode=next;$('#modelError').hidden=true;$('#loadStatus').textContent='座舱与结构细节载入中…';$('#loading').hidden=false;ensureInterior().catch(()=>{});return}
+ pendingMode=pendingView=null;$('#loading').hidden=true;$('#modelError').hidden=true;
+ const prev=mode;mode=next;updateGlass();controls.maxPolarAngle=next==='explode'?Math.PI*.72:Math.PI*.485;
+ $$('[data-mode]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===next)));$$('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==next);
+ if(next!=='explode')setExplode(0);if(next!=='animate'){setDoor(0);$('#rotorToggle').checked=false;speedTarget=0;}
+ if(next==='explode'||prev==='explode'){if(next==='explode')explodeScope='assembly';$('#explodeControls').hidden=false;updateScopeVisibility();$$('[data-explode-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.explodeScope===explodeScope)));chooseView('perspective');}
+ $('#selectedPart').hidden=true;
+}
+function setExplode(value){
+ const previous=explodeTarget,wasZero=previous===0;explodeTarget=value/100;
+ $('#explodeRange').value=value;$('#explodeValue').textContent=Math.round(value)+'%';
+ const phase=explodeScope==='rotor'?(value===0?'完整旋翼':value<55?'上部叶轮':'旋翼分层'):value===0?'完整装配':value<30?'上盖与舱门':value<60?'旋翼结构':value<85?'内部装配':'底部系统';
+ $('#explodePhase').textContent='当前阶段 · '+phase;
+ $('#explodePlay').innerHTML=value>50?'回到完整装配 <span>↙</span>':'展开结构 <span>↗</span>';
+ if(mode==='explode'&&ready){
+  if(wasZero!==(explodeTarget===0))updateGlass();
+  if(explodeScope==='assembly'&&Math.abs(previous-explodeTarget)>.001){
+   cameraTween=null;
+   const direction=camera.position.clone().sub(controls.target).multiplyScalar((1+.38*explodeTarget)/(1+.38*previous));
+   controls.target.y+=1.55*(explodeTarget-previous);camera.position.copy(controls.target).add(direction);controls.update();
+  }
+ }
+}
 function setDoor(value){doorTarget=value/100;$('#doorRange').value=value;$('#doorValue').textContent=Math.round(value)+'%';$('#doorPlay').innerHTML=value>50?'关闭舱门 <span>↙</span>':'开启舱门 <span>↗</span>';}
-function setEnvironment(dark){night=dark;stage.classList.toggle('night-stage',dark);if(!scene)return;scene.background.set(dark?0x171d26:0xe9edf1);scene.fog.color.copy(scene.background);floor.material.color.set(dark?0x222a36:0xe1e6ec);sceneLightCards[0].material.color.set(dark?0x2d3643:0xf3f5f6);grid.material.opacity=dark?.055:.07;renderer.toneMappingExposure=dark?.70:.72;bloom.strength=dark?.16:.11;$$('[data-env]').forEach(b=>b.classList.toggle('active',(b.dataset.env==='night')===dark));}
+function setEnvironment(dark){night=dark;stage.classList.toggle('night-stage',dark);if(!scene)return;scene.background.set(dark?0x171d26:0xdce2e8);scene.fog.color.copy(scene.background);floor.material.color.set(dark?0x222a36:0xcbd3dc);sceneLightCards[0].material.color.set(dark?0x2d3643:0xd6dde4);sceneLightCards[1].material.color.set(dark?0x74889a:0xaab8c5);grid.material.opacity=dark?.055:.07;studioHemi.intensity=dark?.36:.45;shadowLight.intensity=dark?1.02:1.15;rimLight.intensity=dark?.9:.78;scene.environmentIntensity=dark?.72:.9;renderer.toneMappingExposure=dark?.68:.70;bloom.strength=dark?.2:.11;$$('[data-env]').forEach(b=>b.classList.toggle('active',(b.dataset.env==='night')===dark));}
 function selectPart(e){if(!ready||Math.hypot(e.clientX-pointers[0],e.clientY-pointers[1])>6)return;const r=canvas.getBoundingClientRect();raycaster.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);const hit=raycaster.intersectObjects(actors.map(a=>a.userData.mesh)).find(h=>h.object.material.opacity>.2);if(hit){$('#selectedPart').hidden=false;$('#selectedPartName').textContent=hit.object.name;$('#selectedPartType').textContent=hit.object.userData.actor.userData.motion?'可开启组件':'模型组件';}}
 function render(){if(!renderer)return;const dt=Math.min(clock.getDelta(),.05);if(!inView&&!document.fullscreenElement||document.hidden)return;
  frameMs=frameMs*.96+dt*1000*.04;statsTime+=dt;frames++;
@@ -145,13 +240,14 @@ function render(){if(!renderer)return;const dt=Math.min(clock.getDelta(),.05);if
  controls.autoRotate=$('#autoRotate').checked&&!reduced;controls.update();explode=THREE.MathUtils.damp(explode,explodeTarget,4,dt);door=THREE.MathUtils.damp(door,doorTarget,4.5,dt);
  speedTarget=$('#rotorToggle').checked?Number($('#rotorSpeed').value):0;speed=THREE.MathUtils.damp(speed,speedTarget,1.6,dt);rotorAngle+=speed*dt;
  root.position.y=1.91+(mode==='explode'?(explodeScope==='assembly'?1.85:.65)*explode:0);
- if(explosionFill)explosionFill.intensity=mode==='explode'?.38*explode:0;
+ if(explosionFill)explosionFill.intensity=mode==='explode' ? .38*explode : 0;
+ if(cabinFill)cabinFill.intensity=['cabin','frontconsole','rearconsole'].includes(currentView)?0.95:0;
  if(guideGroup)for(const line of guideGroup.children)line.material.opacity=.38*explode;
- const doorOpen=mode==='explode'?Math.max(door,explode):door;
- for(const a of actors){const u=a.userData,partT=u.part==='canopy'?THREE.MathUtils.smoothstep(explode,0,.45):u.part.startsWith('seat_')?THREE.MathUtils.smoothstep(explode,.3,1):explode;a.position.copy(u.pivot).addScaledVector(scopeOffset(u),partT);if(u.motion){a.quaternion.slerpQuaternions(identity,u.endQuaternion,doorOpen);a.position.addScaledVector(u.residual,doorOpen);}if(u.explodeOccluder&&(mode!=='explode'||explodeScope==='assembly')){const opacity=mode==='explode'?1-THREE.MathUtils.smoothstep(explode,0,.27):1;const transparent=opacity<.999;if(u.mesh.material.transparent!==transparent){u.mesh.material.transparent=transparent;u.mesh.material.needsUpdate=true}u.mesh.material.opacity=opacity;u.mesh.material.depthWrite=opacity>.5;a.visible=opacity>.01;}}
- const blur=THREE.MathUtils.smoothstep(speed,7,18);for(const r of rotors){r.anchor.position.copy(r.center);r.moving.position.y=mode==='explode'?.68*explode:0;r.moving.rotation.y=rotorAngle*r.sign;r.disc.material.opacity=blur*.2;}
+ const doorOpen=mode==='explode'?Math.max(door,separationFor('door_l',explode)):door;
+ for(const a of actors){const u=a.userData,partT=separationFor(u.part,explode);a.position.copy(u.pivot).addScaledVector(scopeOffset(u),partT);if(u.motion){a.quaternion.slerpQuaternions(identity,u.endQuaternion,doorOpen);a.position.addScaledVector(u.residual,doorOpen);}if(u.explodeOccluder&&(mode!=='explode'||explodeScope==='assembly')){const opacity=mode==='explode'?1-THREE.MathUtils.smoothstep(explode,0,.27):1;const transparent=opacity<.999;if(u.mesh.material.transparent!==transparent){u.mesh.material.transparent=transparent;u.mesh.material.needsUpdate=true}u.mesh.material.opacity=opacity;u.mesh.material.depthWrite=opacity>.5;u.mesh.castShadow=u.layer!==2;a.visible=opacity>.01;}}
+ const blur=THREE.MathUtils.smoothstep(speed,7,18),rotorSeparation=mode==='explode'?separationFor('rotor_',explode):0;for(const r of rotors){r.anchor.position.copy(r.center).addScaledVector(r.offset,rotorSeparation);r.moving.position.y=.75*rotorSeparation;r.moving.rotation.y=rotorAngle*r.sign;r.disc.material.opacity=blur*.2;}
  const labelsOn=$('#showLabels').checked&&mode==='orbit';$('#labels').hidden=!labelsOn;for(const [i,h]of hotspots.entries()){vertex.copy(h.p).add(root.position).project(camera);h.el.style.left=`${Math.max(15,Math.min(stage.clientWidth-165,(vertex.x*.5+.5)*stage.clientWidth+(i===1?-95:i===2?35:0)))}px`;h.el.style.top=`${Math.max(75,Math.min(stage.clientHeight-95,(-vertex.y*.5+.5)*stage.clientHeight+(i===2?55:i===1?25:0)))}px`;h.el.hidden=vertex.z>1||Math.abs(vertex.x)>.95||i===3;}
- if(statsTime>.5){$('#rotorStatus').textContent=speed<.05?'待机':speedTarget===0?'减速中':Math.abs(speed-speedTarget)>.5?'加速中':speed>7?'高速演示':'低速观察';$('#renderStats').textContent=`${Math.round(1000/Math.max(frameMs,1))} FPS`;stage.dataset.rotorSpeed=speed.toFixed(2);stage.dataset.doorProgress=door.toFixed(3);statsTime=0;}
+ if(statsTime>.5){$('#rotorStatus').textContent=speed<.05?'待机':speedTarget===0?'减速中':Math.abs(speed-speedTarget)>.5?'加速中':speed>7?'高速演示':'低速观察';$('#renderStats').textContent=`${Math.round(1000/Math.max(frameMs,1))} FPS`;stage.dataset.rotorSpeed=speed.toFixed(2);stage.dataset.doorProgress=door.toFixed(3);if(mobile&&ready&&$('#quality').value==='fine'){slowFrames=frameMs>42?slowFrames+1:Math.max(0,slowFrames-1);if(slowFrames>=8){$('#quality').value='light';resize();$('#renderStats').textContent='自动切换流畅画质';}}statsTime=0;}
  if($('#quality').value==='light')renderer.render(scene,camera);else composer.render();
 }
 let tourIndex=-1;const tourStops=[
@@ -161,11 +257,11 @@ let tourIndex=-1;const tourStops=[
  {title:'环形动力单元',description:'观察旋翼布局与独立旋转的叶片。',run:()=>{setMode('animate');chooseView('rotor');$('#rotorSpeed').value=2;$('#rotorToggle').checked=true}},
  {title:'材质与灯光',description:'探索暖白机身、深色玻璃与可变色特征灯。',run:()=>{setMode('material');chooseView('perspective')}},
  {title:'结构分解',description:'以展示性分解了解机身、座舱与动力组件的空间关系。',run:()=>{setMode('explode');setExplode(100)}}];
-function stopTour(){if(tourTimer){clearInterval(tourTimer);tourTimer=null}tourIndex=-1;$('#tourCard').hidden=true;$('#guidedTour').textContent='播放导览 ↗';}
+function stopTour(){if(tourTimer){clearInterval(tourTimer);tourTimer=null}tourIndex=-1;$('#tourCard').hidden=true;$('#guidedTour').textContent='开始导览 ↗';}
 function showTour(index){tourIndex=Math.max(0,Math.min(tourStops.length-1,index));const item=tourStops[tourIndex];item.run();$('#tourCard').hidden=false;$('#tourStep').textContent=String(tourIndex+1).padStart(2,'0')+' / 06 · GUIDED TOUR';$('#tourTitle').textContent=item.title;$('#tourDescription').textContent=item.description;$('#tourPrevious').disabled=tourIndex===0;$('#tourNext').textContent=tourIndex===tourStops.length-1?'完成导览 ✓':'下一站 →';$('#guidedTour').textContent='结束导览 ×';}
 $('#guidedTour').onclick=()=>tourIndex<0?showTour(0):stopTour();$('#tourPrevious').onclick=()=>showTour(tourIndex-1);$('#tourNext').onclick=()=>tourIndex===tourStops.length-1?stopTour():showTour(tourIndex+1);$('#tourExit').onclick=stopTour;
-function updateGlass(){const on=$('#glassToggle').checked&&mode!=='explode';glassMats.forEach(m=>{m.transmission=on&&!mobile?.65:mobile?0:.12;m.transparent=on||mobile;m.opacity=on?.26:mobile?.9:1;m.depthWrite=!on;m.needsUpdate=true;});}
-$$('[data-mode]').forEach(b=>b.onclick=()=>{stopTour();setMode(b.dataset.mode)});$$('[data-view]').forEach(b=>b.onclick=()=>{const view=b.dataset.view;if(view==='frontconsole'||view==='rearconsole'){setMode('animate');setDoor(100);$('#glassToggle').checked=true;updateGlass();}chooseView(view);});$$('[data-env]').forEach(b=>b.onclick=()=>setEnvironment(b.dataset.env==='night'));
+function updateGlass(){const on=$('#glassToggle').checked&&(mode!=='explode'||explodeTarget===0);glassMats.forEach(m=>{m.transmission=on&&!mobile?.65:mobile?0:.12;m.transparent=on||mobile;m.opacity=on?.26:mobile?.9:1;m.depthWrite=!on;m.needsUpdate=true;});}
+$$('[data-mode]').forEach(b=>b.onclick=()=>{stopTour();setMode(b.dataset.mode)});$$('[data-view]').forEach(b=>b.onclick=()=>{const view=b.dataset.view;if(['cabin','frontconsole','rearconsole'].includes(view)){setMode('animate');setDoor(100);$('#glassToggle').checked=true;updateGlass();if(!interiorReady){pendingView=view;$('#modelError').hidden=true;$('#loadStatus').textContent='座舱细节载入中…';$('#loading').hidden=false;ensureInterior().catch(()=>{});return}}chooseView(view);});$$('[data-env]').forEach(b=>b.onclick=()=>setEnvironment(b.dataset.env==='night'));
 $$('[data-explode-scope]').forEach(b=>b.onclick=()=>setExplodeScope(b.dataset.explodeScope));
 $('#explodeRange').oninput=e=>setExplode(Number(e.target.value));$('#explodePlay').onclick=()=>setExplode(explodeTarget>.5?0:100);$('#doorRange').oninput=e=>setDoor(Number(e.target.value));$('#doorPlay').onclick=()=>setDoor(doorTarget>.5?0:100);
 $$('[data-rotor-preset]').forEach(b=>b.onclick=()=>{$('#rotorSpeed').value=b.dataset.rotorPreset;$('#rotorToggle').checked=true;$$('[data-rotor-preset]').forEach(x=>x.classList.toggle('active',x===b));});
@@ -173,10 +269,10 @@ $$('[data-color]').forEach(b=>b.onclick=()=>{bodyMats.forEach(m=>m.color.set(b.d
 $('#roughness').oninput=e=>{bodyMats.forEach(m=>m.roughness=Number(e.target.value)/100);$('#roughnessValue').textContent=e.target.value+'%';};$('#glassToggle').onchange=updateGlass;
 function updateLightColor(){const color=$('#lightColor').value;lightMats.forEach(m=>{m.color.set(!$('#lightToggle').checked?'#f3f3ee':m.userData.diffuser?'#f3f3ee':color);m.emissive.set(color);m.emissiveIntensity=$('#lightToggle').checked?(m.userData.diffuser?1.15:2.8):0;});$('#lightColorValue').textContent=color.toUpperCase();}
 $('#lightColor').oninput=updateLightColor;$$('[data-light-color]').forEach(b=>b.onclick=()=>{$('#lightColor').value=b.dataset.lightColor;updateLightColor();$$('[data-light-color]').forEach(x=>x.classList.toggle('active',x===b));});
-$('#lightToggle').onchange=updateLightColor;$('#quality').onchange=resize;$('#toggleBackground').onclick=()=>setEnvironment(!night);
-$('#resetModel').onclick=()=>{stopTour();setMode('orbit');setExplode(0);setDoor(0);$('#rotorToggle').checked=false;$('#autoRotate').checked=false;$('#showLabels').checked=false;$('#glassToggle').checked=false;updateGlass();$('#lightToggle').checked=true;$('#lightColor').value='#75cfff';updateLightColor();bodyMats.forEach(m=>{m.color.set('#e8e9e5');m.roughness=.19});$('#roughness').value=19;$('#roughnessValue').textContent='19%';$$('[data-color]').forEach((b,i)=>b.classList.toggle('selected',i===0));$('#colorName').textContent='暖瓷白';$('#colorType').textContent='原设计配色 / 珠光暖白';setEnvironment(false);chooseView('perspective');};
-$('#fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('.viewer-shell').requestFullscreen();}catch{$('#interactionHint').textContent='当前浏览器不支持全屏，可放大浏览窗口';}};document.addEventListener('fullscreenchange',resize);$('#retryModel').onclick=()=>location.reload();$('#closePart').onclick=()=>$('#selectedPart').hidden=true;
+$('#lightToggle').onchange=updateLightColor;$('#quality').onchange=()=>{slowFrames=0;resize()};$('#toggleBackground').onclick=()=>setEnvironment(!night);
+$('#dismissError').onclick=()=>{pendingMode=pendingView=null;$('#modelError').hidden=true;$('#loading').hidden=true;if(ready)setMode('orbit')};
+$('#resetModel').onclick=()=>{stopTour();setMode('orbit');setExplode(0);setDoor(0);$('#rotorToggle').checked=false;$('#autoRotate').checked=false;$('#showLabels').checked=false;$('#glassToggle').checked=false;updateGlass();$('#lightToggle').checked=true;$('#lightColor').value='#75cfff';updateLightColor();bodyMats.forEach(m=>{m.color.set('#e8e9e5');m.roughness=.19});$('#roughness').value=19;$('#roughnessValue').textContent='19%';$$('[data-color]').forEach((b,i)=>b.classList.toggle('selected',i===0));$('#colorName').textContent='暖瓷白';$('#colorType').textContent='原设计配色 / 珠光暖白';setEnvironment(true);chooseView('perspective');};
+$('#fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('.viewer-shell').requestFullscreen();}catch{$('#interactionHint').textContent='当前浏览器不支持全屏，可放大浏览窗口';}};document.addEventListener('fullscreenchange',resize);$('#retryModel').onclick=()=>{if(ready&&interiorFailure){$('#modelError').hidden=true;$('#loadStatus').textContent='正在重试座舱细节…';$('#loading').hidden=false;ensureInterior().catch(()=>{})}else location.reload()};$('#closePart').onclick=()=>$('#selectedPart').hidden=true;
 new IntersectionObserver(es=>{inView=es[0].isIntersecting;if(inView)init();},{rootMargin:'250px'}).observe(stage);document.addEventListener('visibilitychange',()=>clock.getDelta());window.addEventListener('pagehide',()=>{renderer?.setAnimationLoop(null);stopTour()});
-
 
 

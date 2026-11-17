@@ -1,1 +1,35 @@
 .design-story{padding:110px 7%;background:#101923;color:#f4f7f8}.story-intro{max-width:660px}.story-intro h2{font-size:clamp(34px,4vw,60px);line-height:1.4;margin:22px 0}.story-intro>p:last-child{color:#b3c1ca;line-height:2;font-size:14px}.story-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;margin:65px 0 38px}.story-steps article{border-top:1px solid #6e8c9e;padding-top:23px}.story-steps span{font-size:10px;letter-spacing:.16em;color:#8db9d2}.story-steps h3{font-size:21px;margin:18px 0}.story-steps p{font-size:13px;color:#b3c1ca;line-height:2}.story-link{font-size:12px;color:#a6d8f4}.tour-card{position:absolute;left:24px;bottom:58px;width:min(285px,45%);z-index:5;padding:18px 20px;color:#eef8ff;background:#0b1828e8;border:1px solid #91c7e855;border-radius:10px;backdrop-filter:blur(12px)}.tour-card[hidden]{display:none}.tour-card>span{font-size:9px;color:#8dc4e4;letter-spacing:.12em}.tour-card strong{display:block;font-size:18px;margin:8px 0}.tour-card p{font-size:11px;line-height:1.7;color:#c5d4de;margin:0 0 12px}.tour-card div{display:flex;gap:8px}.tour-card button{color:#e3f3fc;background:#ffffff12;border:1px solid #a4cce044;border-radius:4px;padding:7px 10px;font-size:11px;cursor:pointer}.tour-card button:disabled{opacity:.35}.tour-card #tourExit{margin-left:auto}.view-options button{min-height:36px}@media(max-width:760px){.design-story{padding:70px 6%}.story-steps{grid-template-columns:1fr;gap:26px;margin:38px 0}.story-steps h3{font-size:18px;margin:12px 0}.tour-card{left:12px;bottom:49px;width:min(255px,72%);padding:12px}.tour-card strong{font-size:15px}.tour-card p{font-size:10px}.view-options{grid-template-columns:repeat(2,minmax(0,1fr))}.viewer-panel{min-height:0}.viewer-shell{overflow:visible}}.viewport-corner button{pointer-events:auto}
+
+/* Compact scope controls in the structure study panel. */
+.explode-scopes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-bottom:13px}
+.explode-scopes button{min-height:40px;padding:8px 3px;border:1px solid #cfdae3;border-radius:5px;background:#fff;color:#627e93;font-size:10px;line-height:1.35}
+.explode-scopes button[aria-pressed="true"]{background:#e6f1f8;border-color:#8ebbd6;color:#315f7e}
+.explode-scopes button:hover{border-color:#84b3d0}
+@media(max-width:760px){.explode-scopes{gap:8px}.explode-scopes button{min-height:44px;font-size:11px}}
+.loading{background:#e9edf1 url('assets/model-poster.webp') center/cover no-repeat;align-items:flex-start;justify-content:flex-end;padding:0 0 60px 28px;gap:6px;color:#294357}
+.loading .loader-ring{width:18px;height:18px;border-width:2px;margin-bottom:5px}
+.loading strong{font-size:13px;background:#e9edf1d9;padding:4px 8px;border-radius:3px}
+.loading #loadStatus{font-size:10px;background:#e9edf1d9;padding:3px 8px;border-radius:3px}
+.viewer-settings{position:relative;pointer-events:auto}
+.viewer-settings summary{list-style:none;cursor:pointer;padding:7px 10px;border:1px solid #7896ac66;border-radius:4px;background:#eff5f7b8;color:#456477;font-size:9px}
+.viewer-settings summary::-webkit-details-marker{display:none}
+.viewer-settings>div{position:absolute;right:0;bottom:calc(100% + 8px);min-width:145px;padding:10px 12px;border:1px solid #a3bdcc88;border-radius:5px;background:#f4f7f9ee;color:#4a6579;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 8px 28px #1d2e3e24}
+.night-stage .viewer-settings summary{background:#1f3446c9;color:#c4deed;border-color:#8ab6d455}
+.night-stage .viewer-settings>div{background:#1c2e3def;color:#d5e7f0}
+.explode-phase{font-size:10px;color:#496c83;margin:12px 0 0;padding-left:9px;border-left:2px solid #79b9db}
+@media(max-width:760px){.loading{padding:0 0 54px 15px}.viewer-settings summary{font-size:8px;padding:6px}.explode-phase{font-size:11px}}
+@media(max-width:760px){.viewer-shell:not(:fullscreen){height:clamp(590px,calc(100svh - 145px),760px);min-height:0;max-height:none;overflow:hidden}.viewer-shell:not(:fullscreen) .viewport{height:54%;min-height:0;flex:none}.viewer-shell:not(:fullscreen) .viewer-panel{height:46%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.viewer-shell:not(:fullscreen) .mode-tabs{position:sticky;top:0;z-index:3}.viewer-shell:not(:fullscreen) .explode-scopes button{min-height:42px}}
+.loading{background-color:#101923;background-image:linear-gradient(90deg,#0b1420ad,#0b142067),url('assets/model-poster-night.webp');color:#e3eff8}
+.loading strong,.loading #loadStatus{background:#101e2bd9;color:#e1edf5}
+.night-stage .model-error{background:#142334f2;color:#e9f4fc}
+#explodeControls[hidden]{display:none!important}
+
+
+
+
+
+
+
+
+@media(max-width:760px){.viewer-shell:not(:fullscreen) .viewport{height:50%}.viewer-shell:not(:fullscreen) .viewer-panel{height:50%}.mode-content[data-panel=explode] .panel-intro{display:none}.mode-content[data-panel=explode]{padding-top:9px}.mode-content[data-panel=explode] .control-middle{margin-top:4px}}
+#dismissError{margin-left:10px}.viewport{background:#171d26}@media(max-width:760px){.mode-content[data-panel=explode] .panel-toggles{margin-top:10px}.mode-content[data-panel=explode] .panel-note{margin-top:5px}.viewer-panel .panel-nav{padding:8px 0}.mode-tabs button{min-height:44px}}

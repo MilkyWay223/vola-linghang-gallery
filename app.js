@@ -4,7 +4,7 @@ let pendingMode;
 
 function loadViewer() {
   if (!viewerPromise) {
-    viewerPromise = import('./viewer-v2.js?v=fast11').catch(error => {
+    viewerPromise = import('./viewer-v2.js?v=final22').catch(error => {
       console.error('VOLA viewer:', error);
       document.querySelector('#loading').hidden = true;
       const notice = document.querySelector('#modelError');
@@ -42,4 +42,3 @@ document.querySelectorAll('[data-lab-mode]').forEach(link => {
     loadViewer().then(activatePendingMode).catch(() => {});
   });
 });
-
